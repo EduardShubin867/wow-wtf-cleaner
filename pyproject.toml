@@ -26,7 +26,10 @@ classifiers = [
     "Topic :: Games/Entertainment :: Role-Playing",
     "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = [
+    "customtkinter>=5.2",
+    "darkdetect>=0.8",
+]
 
 [project.optional-dependencies]
 dev = [

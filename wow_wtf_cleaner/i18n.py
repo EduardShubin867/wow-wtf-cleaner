@@ -136,16 +136,25 @@ def detect_system_lang() -> Lang:
         if val:
             tags.append(val.split(".")[0])
 
-    try:
-        locale.setlocale(locale.LC_MESSAGES, "")
-    except (OSError, ValueError, locale.Error):
-        pass
-    try:
-        loc = locale.getlocale(locale.LC_MESSAGES)
-        if loc and loc[0]:
-            tags.append(loc[0])
-    except (OSError, ValueError, TypeError):
-        pass
+    if hasattr(locale, "LC_MESSAGES"):
+        try:
+            locale.setlocale(locale.LC_MESSAGES, "")
+        except (OSError, ValueError, locale.Error):
+            pass
+        try:
+            loc = locale.getlocale(locale.LC_MESSAGES)
+            if loc and loc[0]:
+                tags.append(loc[0])
+        except (OSError, ValueError, TypeError):
+            pass
+    else:
+        # Windows fallback: use the default locale
+        try:
+            loc = locale.getdefaultlocale()
+            if loc and loc[0]:
+                tags.append(loc[0])
+        except (OSError, ValueError, TypeError):
+            pass
 
     for tag in tags:
         if tag.lower().startswith("ru"):

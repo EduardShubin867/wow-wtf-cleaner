@@ -1,11 +1,13 @@
-"""Application Tkinter UI."""
+"""Application CustomTkinter UI — modern dark theme."""
 
 from __future__ import annotations
 
 import threading
 from pathlib import Path
-from tkinter import StringVar, Tk, filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox
 from typing import Callable
+
+import customtkinter as ctk
 
 from wow_wtf_cleaner.config import (
     auto_detect_wow,
@@ -19,6 +21,27 @@ from wow_wtf_cleaner.i18n import Lang, UiPreference, effective_lang, tr
 
 _LANG_ORDER: tuple[UiPreference, ...] = ("auto", "ru", "en")
 
+# ── Theme ──────────────────────────────────────────────────────────────────
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+C = {
+    "bg":         "#0D0D1A",
+    "surface":    "#13132A",
+    "card":       "#1A1A35",
+    "input":      "#0A0A18",
+    "blue":       "#4A7FFF",
+    "blue_hover": "#3060DD",
+    "gold":       "#F0B429",
+    "gold_hover": "#D09A1A",
+    "green":      "#2ECC71",
+    "green_hover":"#27AE60",
+    "text":       "#E8E8F8",
+    "muted":      "#8888AA",
+    "dim":        "#555575",
+    "border":     "#2A2A55",
+}
+
 
 class CleanupApp:
     """Two-step UI: scan first (dry-run), then move."""
@@ -27,14 +50,17 @@ class CleanupApp:
         self._lang_pref: UiPreference = load_ui_language()
         self._effective_lang: Lang = effective_lang(self._lang_pref)
         self._syncing_lang_combo = False
+        self._scanning = False
+        self._progress_value = 0.0
+        self._progress_dir = 1
 
-        self.root = Tk()
-        self.root.geometry("820x620")
-        self.root.minsize(640, 480)
+        self.root = ctk.CTk()
+        self.root.geometry("920x700")
+        self.root.minsize(720, 540)
+        self.root.configure(fg_color=C["bg"])
 
-        self.wow_path = StringVar(value=auto_detect_wow())
-        self.status_text = StringVar()
-
+        self.wow_path = ctk.StringVar(value=auto_detect_wow())
+        self.status_text = ctk.StringVar()
         self.scan_result: ScanResult | None = None
 
         self._build_ui()
@@ -43,68 +69,276 @@ class CleanupApp:
     def _app_title(self) -> str:
         return tr(self._effective_lang, "app.title")
 
-    # ----- layout -----------------------------------------------------------
+    # ── Layout ────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        pad = {"padx": 10, "pady": 6}
+        self._build_header()
 
-        lang_row = ttk.Frame(self.root)
-        lang_row.pack(fill="x", **pad)
-        self._lang_label = ttk.Label(lang_row)
+        self._main = ctk.CTkFrame(self.root, fg_color="transparent")
+        self._main.pack(fill="both", expand=True, padx=18, pady=(14, 0))
+
+        self._build_intro_card()
+        self._build_path_card()
+        self._build_action_buttons()
+        self._build_progress_area()
+        self._build_log_area()
+        self._build_status_bar()
+
+    def _build_header(self) -> None:
+        header = ctk.CTkFrame(
+            self.root,
+            fg_color=C["surface"],
+            corner_radius=0,
+            height=58,
+            border_width=1,
+            border_color=C["border"],
+        )
+        header.pack(fill="x", side="top")
+        header.pack_propagate(False)
+
+        # WoW sword icon + title
+        ctk.CTkLabel(
+            header,
+            text="⚔  WoW WTF Cleaner",
+            font=ctk.CTkFont(family="Segoe UI", size=19, weight="bold"),
+            text_color=C["gold"],
+        ).pack(side="left", padx=22, pady=14)
+
+        # Version badge
+        ctk.CTkLabel(
+            header,
+            text="v0.1",
+            font=ctk.CTkFont(size=11),
+            text_color=C["dim"],
+        ).pack(side="left", pady=20)
+
+        # Language selector on the right
+        lang_frame = ctk.CTkFrame(header, fg_color="transparent")
+        lang_frame.pack(side="right", padx=18, pady=12)
+
+        self._lang_label = ctk.CTkLabel(
+            lang_frame,
+            text="",
+            font=ctk.CTkFont(size=13),
+            text_color=C["muted"],
+        )
         self._lang_label.pack(side="left", padx=(0, 8))
-        self._lang_combo = ttk.Combobox(
-            lang_row,
-            state="readonly",
-            width=28,
+
+        self._lang_combo = ctk.CTkOptionMenu(
+            lang_frame,
+            values=[""],
+            command=self._on_language_selected_option,
+            width=170,
+            height=32,
+            fg_color=C["card"],
+            button_color=C["blue"],
+            button_hover_color=C["blue_hover"],
+            dropdown_fg_color=C["card"],
+            dropdown_hover_color=C["surface"],
+            text_color=C["text"],
+            font=ctk.CTkFont(size=13),
+            corner_radius=8,
         )
         self._lang_combo.pack(side="left")
-        self._lang_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
 
-        self._intro = ttk.Label(
-            self.root,
-            wraplength=780,
-            justify="left",
+    def _card(self, parent: ctk.CTkFrame) -> ctk.CTkFrame:
+        """Helper: returns a styled card frame."""
+        return ctk.CTkFrame(
+            parent,
+            fg_color=C["card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=C["border"],
         )
-        self._intro.pack(fill="x", **pad)
 
-        self._path_frame = ttk.LabelFrame(self.root)
-        self._path_frame.pack(fill="x", **pad)
+    def _build_intro_card(self) -> None:
+        card = self._card(self._main)
+        card.pack(fill="x", pady=(0, 10))
 
-        row = ttk.Frame(self._path_frame)
-        row.pack(fill="x", padx=8, pady=8)
-        ttk.Entry(row, textvariable=self.wow_path).pack(side="left", fill="x", expand=True)
-        self._browse_btn = ttk.Button(row, command=self._browse)
-        self._browse_btn.pack(side="left", padx=(6, 0))
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=12)
 
-        btns = ttk.Frame(self.root)
-        btns.pack(fill="x", **pad)
-        self.scan_btn = ttk.Button(btns, command=self._on_scan)
-        self.scan_btn.pack(side="left")
-        self.apply_btn = ttk.Button(
-            btns,
+        ctk.CTkLabel(
+            inner,
+            text=" ℹ ",
+            font=ctk.CTkFont(size=16),
+            text_color=C["blue"],
+            width=30,
+        ).pack(side="left", anchor="n", pady=2)
+
+        self._intro = ctk.CTkLabel(
+            inner,
+            text="",
+            wraplength=800,
+            justify="left",
+            font=ctk.CTkFont(size=13),
+            text_color=C["muted"],
+            anchor="w",
+        )
+        self._intro.pack(side="left", padx=(6, 0), fill="x", expand=True)
+
+    def _build_path_card(self) -> None:
+        card = self._card(self._main)
+        card.pack(fill="x", pady=(0, 10))
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=14)
+
+        self._path_label = ctk.CTkLabel(
+            inner,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=C["muted"],
+            anchor="w",
+        )
+        self._path_label.pack(anchor="w", pady=(0, 8))
+
+        row = ctk.CTkFrame(inner, fg_color="transparent")
+        row.pack(fill="x")
+
+        self._path_entry = ctk.CTkEntry(
+            row,
+            textvariable=self.wow_path,
+            font=ctk.CTkFont(size=13, family="Consolas"),
+            fg_color=C["input"],
+            border_color=C["border"],
+            text_color=C["text"],
+            placeholder_text="C:\\Program Files (x86)\\World of Warcraft\\_retail_",
+            placeholder_text_color=C["dim"],
+            corner_radius=8,
+            height=38,
+        )
+        self._path_entry.pack(side="left", fill="x", expand=True)
+
+        self._browse_btn = ctk.CTkButton(
+            row,
+            text="",
+            command=self._browse,
+            width=100,
+            height=38,
+            fg_color=C["surface"],
+            hover_color=C["border"],
+            text_color=C["text"],
+            border_color=C["border"],
+            border_width=1,
+            corner_radius=8,
+            font=ctk.CTkFont(size=13),
+        )
+        self._browse_btn.pack(side="left", padx=(8, 0))
+
+    def _build_action_buttons(self) -> None:
+        btn_frame = ctk.CTkFrame(self._main, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(0, 8))
+
+        self.scan_btn = ctk.CTkButton(
+            btn_frame,
+            text="",
+            command=self._on_scan,
+            height=44,
+            fg_color=C["blue"],
+            hover_color=C["blue_hover"],
+            text_color="white",
+            corner_radius=10,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        self.scan_btn.pack(side="left", fill="x", expand=True)
+
+        self.apply_btn = ctk.CTkButton(
+            btn_frame,
+            text="",
             command=self._on_apply,
             state="disabled",
+            height=44,
+            fg_color=C["green"],
+            hover_color=C["green_hover"],
+            text_color="white",
+            corner_radius=10,
+            font=ctk.CTkFont(size=14, weight="bold"),
         )
-        self.apply_btn.pack(side="left", padx=(8, 0))
+        self.apply_btn.pack(side="left", fill="x", expand=True, padx=(10, 0))
 
-        ttk.Separator(self.root).pack(fill="x", padx=10)
-
-        self.log_widget = scrolledtext.ScrolledText(
-            self.root, wrap="word", state="disabled", font=("Consolas", 10)
+    def _build_progress_area(self) -> None:
+        # Fixed-height container — keeps layout stable
+        self._progress_frame = ctk.CTkFrame(
+            self._main, fg_color="transparent", height=10
         )
-        self.log_widget.pack(fill="both", expand=True, **pad)
+        self._progress_frame.pack(fill="x", pady=(0, 6))
+        self._progress_frame.pack_propagate(False)
 
-        ttk.Label(
-            self.root, textvariable=self.status_text, relief="sunken", anchor="w"
-        ).pack(fill="x", side="bottom")
+        self._progress = ctk.CTkProgressBar(
+            self._progress_frame,
+            fg_color=C["card"],
+            progress_color=C["blue"],
+            corner_radius=4,
+            height=6,
+        )
+        self._progress.set(0)
+        # Will be packed/unpacked in _set_busy
+
+    def _build_log_area(self) -> None:
+        log_header = ctk.CTkFrame(self._main, fg_color="transparent")
+        log_header.pack(fill="x", pady=(0, 6))
+
+        ctk.CTkLabel(
+            log_header,
+            text="📋  Log",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=C["muted"],
+        ).pack(side="left")
+
+        self.log_widget = ctk.CTkTextbox(
+            self._main,
+            font=ctk.CTkFont(family="Consolas", size=12),
+            fg_color=C["card"],
+            text_color=C["text"],
+            border_color=C["border"],
+            border_width=1,
+            corner_radius=12,
+            state="disabled",
+            wrap="word",
+        )
+        self.log_widget.pack(fill="both", expand=True, pady=(0, 0))
+
+    def _build_status_bar(self) -> None:
+        bar = ctk.CTkFrame(
+            self.root,
+            fg_color=C["surface"],
+            corner_radius=0,
+            height=30,
+            border_width=1,
+            border_color=C["border"],
+        )
+        bar.pack(fill="x", side="bottom")
+        bar.pack_propagate(False)
+
+        self._status_label = ctk.CTkLabel(
+            bar,
+            textvariable=self.status_text,
+            font=ctk.CTkFont(size=12),
+            text_color=C["dim"],
+            anchor="w",
+        )
+        self._status_label.pack(side="left", padx=16, pady=6)
+
+        # Right side: "Ready" dot indicator
+        self._status_dot = ctk.CTkLabel(
+            bar,
+            text="●",
+            font=ctk.CTkFont(size=11),
+            text_color=C["green"],
+        )
+        self._status_dot.pack(side="right", padx=16)
+
+    # ── Text refresh ──────────────────────────────────────────────────────
 
     def _refresh_all_texts(self) -> None:
         self._effective_lang = effective_lang(self._lang_pref)
         L = self._effective_lang
+
         self.root.title(self._app_title())
         self._lang_label.configure(text=tr(L, "lang.label"))
         self._intro.configure(text=tr(L, "intro"))
-        self._path_frame.configure(text=tr(L, "path_frame"))
+        self._path_label.configure(text=tr(L, "path_frame").upper())
         self._browse_btn.configure(text=tr(L, "browse"))
         self.scan_btn.configure(text=tr(L, "scan_btn"))
         self.apply_btn.configure(text=tr(L, "apply_btn"))
@@ -115,21 +349,24 @@ class CleanupApp:
             labels = [tr(L, f"lang_option.{p}") for p in _LANG_ORDER]
             self._lang_combo.configure(values=labels)
             idx = _LANG_ORDER.index(self._lang_pref)
-            self._lang_combo.current(idx)
+            self._lang_combo.set(labels[idx])
         finally:
             self._syncing_lang_combo = False
 
-    def _on_language_selected(self, _event: object | None = None) -> None:
+    def _on_language_selected_option(self, value: str) -> None:
         if self._syncing_lang_combo:
             return
-        idx = self._lang_combo.current()
-        if idx < 0:
+        L = self._effective_lang
+        labels = [tr(L, f"lang_option.{p}") for p in _LANG_ORDER]
+        try:
+            idx = labels.index(value)
+        except ValueError:
             return
         self._lang_pref = _LANG_ORDER[idx]
         save_ui_language(self._lang_pref)
         self._refresh_all_texts()
 
-    # ----- helpers ----------------------------------------------------------
+    # ── Helpers ───────────────────────────────────────────────────────────
 
     def _browse(self) -> None:
         initial = self.wow_path.get() or str(Path.home())
@@ -141,8 +378,7 @@ class CleanupApp:
             self.wow_path.set(chosen)
 
     def _log(self, message: str) -> None:
-        """Thread-safe: safe to call from a worker thread."""
-
+        """Thread-safe append to log widget."""
         def append() -> None:
             self.log_widget.configure(state="normal")
             self.log_widget.insert("end", message + "\n")
@@ -165,11 +401,41 @@ class CleanupApp:
         )
         self.apply_btn.configure(state="normal" if can_apply else "disabled")
 
+        if busy:
+            self._scanning = True
+            self._progress_value = 0.0
+            self._progress_dir = 1
+            self._progress.pack(fill="x")
+            self._status_dot.configure(text_color=C["gold"])
+            self._animate_progress()
+        else:
+            self._scanning = False
+            self._progress.pack_forget()
+            self._progress.set(0)
+            self._status_dot.configure(
+                text_color=C["green"] if not can_apply else C["gold"]
+            )
+
+    def _animate_progress(self) -> None:
+        """Bounce the progress bar while scanning."""
+        if not self._scanning:
+            return
+        v = self._progress_value + 0.018 * self._progress_dir
+        if v >= 1.0:
+            v = 1.0
+            self._progress_dir = -1
+        elif v <= 0.0:
+            v = 0.0
+            self._progress_dir = 1
+        self._progress_value = v
+        self._progress.set(v)
+        self.root.after(20, self._animate_progress)
+
     @staticmethod
     def _run_in_thread(target: Callable[[], None]) -> None:
         threading.Thread(target=target, daemon=True).start()
 
-    # ----- actions ----------------------------------------------------------
+    # ── Actions ───────────────────────────────────────────────────────────
 
     def _on_scan(self) -> None:
         wow = Path(self.wow_path.get().strip())
@@ -249,9 +515,7 @@ class CleanupApp:
         def work() -> None:
             try:
                 backup = apply_move(wow, reports, self._log, lang=move_lang)
-                self._log(
-                    tr(move_lang, "done.backup_line", path=backup),
-                )
+                self._log(tr(move_lang, "done.backup_line", path=backup))
                 self.scan_result = None
                 self.root.after(
                     0,
@@ -266,7 +530,8 @@ class CleanupApp:
                     ),
                 )
                 self.root.after(
-                    0, lambda: self.status_text.set(tr(move_lang, "status.done"))
+                    0,
+                    lambda: self.status_text.set(tr(move_lang, "status.done")),
                 )
             except Exception as e:
                 err = str(e)

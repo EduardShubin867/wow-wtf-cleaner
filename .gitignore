@@ -23,6 +23,10 @@ dist/
 *.whl
 
 # PyInstaller
+# WoW-WTF-Cleaner.spec — committed intentionally:
+# it encodes --collect-all customtkinter + --collect-submodules,
+# so anyone can reproduce the build with just:
+#   pyinstaller WoW-WTF-Cleaner.spec
 *.manifest
 *.spec.bak
 
