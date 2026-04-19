@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wow-wtf-cleaner"
+version = "0.1.0"
+description = "GUI-утилита для очистки осиротевших SavedVariables в папке WTF World of Warcraft"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Your Name" }]
+keywords = ["wow", "world-of-warcraft", "addons", "savedvariables", "cleanup", "wtf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: MacOS X",
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Role-Playing",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pyinstaller>=6.0",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+wow-wtf-cleaner = "wow_wtf_cleaner.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/EduardShubin867/wow-wtf-cleaner"
+Issues = "https://github.com/EduardShubin867/wow-wtf-cleaner/issues"
+
+[tool.setuptools.packages.find]
+include = ["wow_wtf_cleaner*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
